@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Kuiz Tembak Jawapan MediaPipe - Pendidikan Kesihatan Tahun 4</title>
+  
+  <!-- MediaPipe Tasks Vision CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js" crossorigin="anonymous"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0f172a;
+      color: #ffffff;
+    }
+
+    #app-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Video & Canvas Overlay */
+    .camera-wrapper {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      background: #000;
+    }
+
+    #webcam {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror camera */
+    }
+
+    #output_canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* HUD Overlay UI */
+    .ui-layer {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 15px;
+      pointer-events: none;
+    }
+
+    .header-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(8px);
+      padding: 12px 20px;
+      border-radius: 16px;
+      border: 2px solid #38bdf8;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .title-box h1 {
+      font-size: 1.2rem;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .title-box p {
+      font-size: 0.85rem;
+      color: #94a3b8;
+    }
+
+    .score-badge {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      padding: 8px 16px;
+      border-radius: 12px;
+      font-weight: bold;
+      font-size: 1.1rem;
+      box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+    }
+
+    /* Status Indicator */
+    .status-banner {
+      align-self: center;
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid #06b6d4;
+      color: #38bdf8;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-top: 10px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    /* Question Box */
+    .question-card {
+      background: rgba(15, 23, 42, 0.9);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      padding: 16px 20px;
+      text-align: center;
+      margin: 10px 0;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+    }
+
+    .question-card h2 {
+      font-size: 1.1rem;
+      color: #f8fafc;
+      line-height: 1.4;
+    }
+
+    /* Answer Grid Layout */
+    .answers-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+      pointer-events: auto; /* Fallback direct click */
+    }
+
+    .answer-btn {
+      position: relative;
+      background: rgba(30, 41, 59, 0.85);
+      border: 3px solid #475569;
+      border-radius: 16px;
+      padding: 16px;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: bold;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+      transition: transform 0.1s, border-color 0.2s, background-color 0.2s;
+      backdrop-filter: blur(5px);
+      min-height: 75px;
+    }
+
+    .answer-btn .badge {
+      background: #475569;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      flex-shrink: 0;
+      font-size: 1.1rem;
+      color: #fff;
+    }
+
+    .answer-btn.targeted {
+      border-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.25);
+      transform: scale(1.02);
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.6);
+    }
+
+    .answer-btn.targeted .badge {
+      background: #f59e0b;
+    }
+
+    .answer-btn.locked {
+      border-color: #ef4444;
+      background: rgba(239, 68, 68, 0.35);
+      animation: pulse-lock 0.4s infinite alternate;
+    }
+
+    .answer-btn.correct {
+      border-color: #10b981 !important;
+      background: rgba(16, 185, 129, 0.6) !important;
+    }
+
+    .answer-btn.wrong {
+      border-color: #ef4444 !important;
+      background: rgba(239, 68, 68, 0.6) !important;
+    }
+
+    @keyframes pulse-lock {
+      from { box-shadow: 0 0 10px rgba(239, 68, 68, 0.5); }
+      to { box-shadow: 0 0 25px rgba(239, 68, 68, 1); }
+    }
+
+    /* Modal / Overlay screens */
+    .overlay-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.95);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 30px;
+      text-align: center;
+      pointer-events: auto;
+    }
+
+    .overlay-screen h2 {
+      font-size: 2rem;
+      color: #38bdf8;
+      margin-bottom: 15px;
+    }
+
+    .overlay-screen p {
+      font-size: 1rem;
+      color: #cbd5e1;
+      max-width: 500px;
+      line-height: 1.6;
+      margin-bottom: 25px;
+    }
+
+    .instructions-card {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid #475569;
+      border-radius: 12px;
+      padding: 15px;
+      margin-bottom: 25px;
+      text-align: left;
+      max-width: 450px;
+    }
+
+    .instructions-card li {
+      margin-bottom: 8px;
+      margin-left: 20px;
+    }
+
+    .btn-action {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      color: white;
+      border: none;
+      padding: 14px 32px;
+      font-size: 1.1rem;
+      font-weight: bold;
+      border-radius: 30px;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(2, 132, 199, 0.4);
+      transition: all 0.2s;
+    }
+
+    .btn-action:active {
+      transform: scale(0.96);
+    }
+
+    .calibration-btn {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      z-index: 20;
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      pointer-events: auto;
+    }
+
+    /* Feedback Flash Overlay */
+    #feedback-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 3rem;
+      font-weight: 900;
+      z-index: 50;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      text-shadow: 0 0 20px rgba(0,0,0,0.8);
+    }
+
+    #feedback-overlay.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.2);
+    }
+
+    .feedback-correct { color: #10b981; }
+    .feedback-wrong { color: #ef4444; }
+
+    /* Hidden Utility elements */
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- Camera Canvas Feed -->
+    <div class="camera-wrapper">
+      <video id="webcam" playsinline webkit-playsinline muted autoplay></video>
+      <canvas id="output_canvas"></canvas>
+    </div>
+
+    <!-- UI Layer -->
+    <div class="ui-layer">
+      <div class="header-bar">
+        <div class="title-box">
+          <h1>Kuiz Tembak MediaPipe</h1>
+          <p>Pendidikan Kesihatan Thn 4</p>
+        </div>
+        <div class="score-badge">Markah: <span id="score-val">0</span></div>
+      </div>
+
+      <button id="calib-btn" class="calibration-btn">🎯 Calibration</button>
+
+      <div id="status-text" class="status-banner">Memuatkan Sistem Kamera...</div>
+
+      <div class="question-card">
+        <h2 id="question-text">Soalan akan dipaparkan di sini...</h2>
+      </div>
+
+      <div class="answers-grid">
+        <div class="answer-btn" id="btn-0" onclick="handleDirectClick(0)">
+          <div class="badge">A</div>
+          <span id="opt-0">Pilihan A</span>
+        </div>
+        <div class="answer-btn" id="btn-1" onclick="handleDirectClick(1)">
+          <div class="badge">B</div>
+          <span id="opt-1">Pilihan B</span>
+        </div>
+        <div class="answer-btn" id="btn-2" onclick="handleDirectClick(2)">
+          <div class="badge">C</div>
+          <span id="opt-2">Pilihan C</span>
+        </div>
+        <div class="answer-btn" id="btn-3" onclick="handleDirectClick(3)">
+          <div class="badge">D</div>
+          <span id="opt-3">Pilihan D</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feedback Message Overlay -->
+    <div id="feedback-overlay">BETUL!</div>
+
+    <!-- Start / Permission Overlay Screen -->
+    <div id="start-screen" class="overlay-screen">
+      <h2>Kuiz Tembak Jawapan</h2>
+      <p>Pendidikan Kesihatan Tahun 4 (Penyakit & Pencemaran)</p>
+      
+      <div class="instructions-card">
+        <p><strong>Cara Bermain:</strong></p>
+        <ul>
+          <li>Bentuk tangan seperti <strong>Pistol</strong> (Jari telunjuk lurus, ibu jari tegak).</li>
+          <li>Halakan jari telunjuk ke arah kotak jawapan A, B, C, atau D.</li>
+          <li><strong>Tarik Picu:</strong> Bengkokkan ibu jari ke bawah untuk menembak.</li>
+          <li><i>Boleh juga terus sentuh skrin jika mahu.</i></li>
+        </ul>
+      </div>
+
+      <button class="btn-action" onclick="initApp()">MULA PERMAINAN</button>
+    </div>
+
+    <!-- Result Screen -->
+    <div id="result-screen" class="overlay-screen hidden">
+      <h2>Tahniah! Permainan Tamat</h2>
+      <p>Anda telah menyelesaikan semua soalan kuiz.</p>
+      <h1 style="font-size: 3.5rem; color: #f59e0b; margin-bottom: 20px;" id="final-score">0 / 100</h1>
+      <button class="btn-action" onclick="restartQuiz()">MAIN SEMULA</button>
+    </div>
+  </div>
+
+  <script>
+    // --- KANDUNGAN SOALAN (10 Soalan Pendidikan Kesihatan Tahun 4) ---
+    const quizData = [
+      {
+        question: "1. Antara berikut, yang manakah merupakan contoh penyakit BERJANGKIT?",
+        options: ["A. Demam Denggi", "B. Diabetes", "C. Sakit Jantung", "D. Hipertensi"],
+        correct: 0
+      },
+      {
+        question: "2. Bagaimanakah virus Demam Denggi disebarkan kepada manusia?",
+        options: ["A. Sentuhan", "B. Gigitan Nyamuk Aedes", "C. Makanan Tercemar", "D. Udara"],
+        correct: 1
+      },
+      {
+        question: "3. Apakah tindakan terbaik untuk mencegah pembiakan nyamuk Aedes?",
+        options: ["A. Biarkan air bertakung", "B. Buang sampah merata-rata", "C. Kerap tukar air dalam vas", "D. Tutup pintu rumah"],
+        correct: 2
+      },
+      {
+        question: "4. Penyakit COVID-19 dan Influenza tergolong dalam jenis penyakit apa?",
+        options: ["A. Saluran Bawah", "B. Bawaan Air", "C. Bawaan Vektor", "D. Saluran Pernafasan"],
+        correct: 3
+      },
+      {
+        question: "5. Apakah amalan kendiri untuk mencegah penularan penyakit pernafasan?",
+        options: ["A. Pakai pelitup muka", "B. Kongsi tuala", "C. Gosok mata", "D. Tidak basuh tangan"],
+        correct: 0
+      },
+      {
+        question: "6. Asap kenderaan dan kilang akan menyebabkan berlakunya pencemaran...",
+        options: ["A. Air", "B. Udara", "C. Tanih", "D. Bunyi"],
+        correct: 1
+      },
+      {
+        question: "7. Pembuangan sisa toksik dan sampah ke dalam sungai menyebabkan pencemaran...",
+        options: ["A. Tanih", "B. Udara", "C. Air", "D. Bunyi"],
+        correct: 2
+      },
+      {
+        question: "8. Apakah kesan pencemaran udara terhadap kesihatan manusia?",
+        options: ["A. Sakit telinga", "B. Diabetes", "C. Patah tulang", "D. Batuk dan Asma"],
+        correct: 3
+      },
+      {
+        question: "9. Antara berikut, manakah langkah mengurangkan pencemaran tanih?",
+        options: ["A. Amalan Kitar Semula", "B. Bakar sampah terbuka", "C. Buang plastik", "D. Tebang pokok"],
+        correct: 0
+      },
+      {
+        question: "10. Mengapakah kita perlu menjaga kebersihan persekitaran?",
+        options: ["A. Biar nampak sibuk", "B. Mencegah penyakit", "C. Supaya dapat hadiah", "D. Menambah sampah"],
+        correct: 1
+      }
+    ];
+
+    // State Variables
+    let currentQuestionIndex = 0;
+    let score = 0;
+    let isInputLocked = false;
+    let handLandmarker = null;
+    let webcamElement = document.getElementById("webcam");
+    let canvasElement = document.getElementById("output_canvas");
+    let canvasCtx = canvasElement.getContext("2d");
+    let lastVideoTime = -1;
+
+    // Aiming & Calibration State
+    let aimX = 0, aimY = 0;
+    let calibOffsetX = 0, calibOffsetY = 0;
+    let isCalibrating = false;
+    let targetedOption = -1;
+    let lockTimer = 0;
+    let isTriggerPulledPrev = false;
+
+    // Web Audio Synthesizer for FX
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playSound(type) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (type === 'shoot') {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } else if (type === 'correct') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); // E5
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      } else if (type === 'wrong') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(100, audioCtx.currentTime + 0.15);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.3);
+      }
+    }
+
+    // --- MediaPipe Initialization ---
+    async function initApp() {
+      document.getElementById("start-screen").classList.add("hidden");
+      updateStatus("Mengaktifkan Kamera iPad...");
+
+      try {
+        // Request Camera Permission for Safari/iOS
+        const constraints = {
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        webcamElement.srcObject = stream;
+        
+        await new Promise((resolve) => {
+          webcamElement.onloadedmetadata = () => resolve();
+        });
+
+        webcamElement.play();
+        updateStatus("Kamera Aktif. Memuatkan Pengesan Tangan...");
+
+        // Load MediaPipe HandLandmarker
+        const vision = await window.FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+        );
+
+        handLandmarker = await window.HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+
+        updateStatus("Halakan pistol tangan ke jawapan!");
+        loadQuestion();
+        requestAnimationFrame(predictWebcam);
+
+      } catch (err) {
+        console.error("Camera/MediaPipe Error:", err);
+        updateStatus("Mod Sentuhan Manual (Kamera tidak dibenarkan)");
+        alert("Akses kamera tidak dapat dimuatkan. Anda masih boleh bermain dengan terus mengetuk pada pilihan jawapan A, B, C, D!");
+        loadQuestion();
+      }
+    }
+
+    // Main Detection Loop
+    async function predictWebcam() {
+      // Resize Canvas to match Window
+      if (canvasElement.width !== window.innerWidth || canvasElement.height !== window.innerHeight) {
+        canvasElement.width = window.innerWidth;
+        canvasElement.height = window.innerHeight;
+      }
+
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      if (handLandmarker && webcamElement.currentTime !== lastVideoTime) {
+        lastVideoTime = webcamElement.currentTime;
+        const results = handLandmarker.detectForVideo(webcamElement, performance.now());
+
+        if (results.landmarks && results.landmarks.length > 0) {
+          processHandGesture(results.landmarks[0]);
+        } else {
+          updateStatus("Halakan tangan pistol ke kamera");
+          resetTargeting();
+        }
+      }
+
+      requestAnimationFrame(predictWebcam);
+    }
+
+    // Process Hand Pose Logic
+    function processHandGesture(landmarks) {
+      // Landmark Indexes:
+      // 0: Wrist, 5: Index_MCP, 8: Index_Tip, 4: Thumb_Tip, 3: Thumb_IP
+      const indexMcp = landmarks[5];
+      const indexTip = landmarks[8];
+      const thumbTip = landmarks[4];
+      const thumbIP = landmarks[3];
+
+      // 1. Validate Pistol Shape (Index Finger Extended)
+      const indexExtended = Math.hypot(indexTip.x - indexMcp.x, indexTip.y - indexMcp.y) > 0.15;
+      
+      if (!indexExtended) {
+        updateStatus("Bentuk tangan seperti PISTOL (Luruskan Jari Telunjuk)");
+        resetTargeting();
+        return;
+      }
+
+      // 2. Compute Aim Ray Direction (Mirrored X for Front Camera)
+      const rawAimX = (1 - indexTip.x) * canvasElement.width;
+      const rawAimY = indexTip.y * canvasElement.height;
+
+      // Vector direction from MCP to Tip
+      const dirX = (indexMcp.x - indexTip.x); 
+      const dirY = (indexTip.y - indexMcp.y);
+
+      // Map aiming coordinate with smoothing (EMA)
+      const targetAimX = rawAimX + (dirX * canvasElement.width * 1.2) + calibOffsetX;
+      const targetAimY = rawAimY + (dirY * canvasElement.height * 1.2) + calibOffsetY;
+
+      aimX = aimX + (targetAimX - aimX) * 0.3;
+      aimY = aimY + (targetAimY - aimY) * 0.3;
+
+      // 3. Trigger Detection (Thumb Folded Down towards Index Base)
+      const thumbDistance = Math.hypot(thumbTip.x - indexMcp.x, thumbTip.y - indexMcp.y);
+      const isTriggerPulled = thumbDistance < 0.12;
+
+      // Draw Laser & Crosshair
+      drawLaserPointer(rawAimX, rawAimY, aimX, aimY, isTriggerPulled);
+
+      // 4. Target Collision Detection
+      if (!isInputLocked) {
+        checkTargetCollision(aimX, aimY);
+
+        // Fire Trigger logic (On Thumb Pull State Change)
+        if (isTriggerPulled && !isTriggerPulledPrev) {
+          if (targetedOption !== -1) {
+            shootAnswer(targetedOption);
+          } else {
+            playSound('shoot');
+            updateStatus("Tembakan tersasar!");
+          }
+        }
+      }
+
+      isTriggerPulledPrev = isTriggerPulled;
+    }
+
+    // Draw Laser Ray & Crosshair Sight
+    function drawLaserPointer(startX, startY, targetX, targetY, isShooting) {
+      // Red Laser Ray
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(startX, startY);
+      canvasCtx.lineTo(targetX, targetY);
+      canvasCtx.strokeStyle = isShooting ? '#ef4444' : '#38bdf8';
+      canvasCtx.lineWidth = isShooting ? 6 : 3;
+      canvasCtx.shadowColor = isShooting ? '#ef4444' : '#38bdf8';
+      canvasCtx.shadowBlur = 12;
+      canvasCtx.stroke();
+      canvasCtx.shadowBlur = 0;
+
+      // Target Crosshair
+      canvasCtx.beginPath();
+      canvasCtx.arc(targetX, targetY, isShooting ? 18 : 12, 0, 2 * Math.PI);
+      canvasCtx.strokeStyle = isShooting ? '#ef4444' : '#f59e0b';
+      canvasCtx.lineWidth = 3;
+      canvasCtx.stroke();
+
+      canvasCtx.beginPath();
+      canvasCtx.arc(targetX, targetY, 4, 0, 2 * Math.PI);
+      canvasCtx.fillStyle = '#ffffff';
+      canvasCtx.fill();
+    }
+
+    // Check collision between laser target and option buttons
+    function checkTargetCollision(x, y) {
+      let found = -1;
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`btn-${i}`);
+        const rect = btn.getBoundingClientRect();
+
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+          found = i;
+          break;
+        }
+      }
+
+      highlightOption(found);
+    }
+
+    function highlightOption(index) {
+      targetedOption = index;
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`btn-${i}`);
+        if (i === index) {
+          btn.classList.add("targeted");
+          updateStatus(`Sasaran: Pilihan ${String.fromCharCode(65 + i)}! Tarik picu ibu jari!`);
+        } else {
+          btn.classList.remove("targeted");
+        }
+      }
+    }
+
+    function resetTargeting() {
+      targetedOption = -1;
+      for (let i = 0; i < 4; i++) {
+        document.getElementById(`btn-${i}`).classList.remove("targeted", "locked");
+      }
+    }
+
+    // Execute Answer Selection
+    function shootAnswer(optionIndex) {
+      if (isInputLocked) return;
+      isInputLocked = true;
+
+      playSound('shoot');
+
+      const btn = document.getElementById(`btn-${optionIndex}`);
+      btn.classList.add("locked");
+
+      const isCorrect = optionIndex === quizData[currentQuestionIndex].correct;
+
+      setTimeout(() => {
+        if (isCorrect) {
+          score += 10;
+          document.getElementById("score-val").textContent = score;
+          btn.classList.add("correct");
+          showFeedback(true, "BETUL! 🎉");
+          playSound('correct');
+        } else {
+          btn.classList.add("wrong");
+          showFeedback(false, "CUBA LAGI! ❌");
+          playSound('wrong');
+          // Highlight correct one
+          document.getElementById(`btn-${quizData[currentQuestionIndex].correct}`).classList.add("correct");
+        }
+
+        setTimeout(() => {
+          currentQuestionIndex++;
+          if (currentQuestionIndex < quizData.length) {
+            loadQuestion();
+          } else {
+            showResults();
+          }
+        }, 1800);
+      }, 300);
+    }
+
+    // Direct Click Fallback for Touch Screen
+    function handleDirectClick(index) {
+      if (!isInputLocked) {
+        shootAnswer(index);
+      }
+    }
+
+    function showFeedback(isCorrect, text) {
+      const fb = document.getElementById("feedback-overlay");
+      fb.textContent = text;
+      fb.className = isCorrect ? "feedback-correct show" : "feedback-wrong show";
+
+      setTimeout(() => {
+        fb.classList.remove("show");
+      }, 1400);
+    }
+
+    function loadQuestion() {
+      isInputLocked = false;
+      resetTargeting();
+
+      const q = quizData[currentQuestionIndex];
+      document.getElementById("question-text").textContent = q.question;
+
+      for (let i = 0; i < 4; i++) {
+        const btn = document.getElementById(`btn-${i}`);
+        btn.className = "answer-btn";
+        document.getElementById(`opt-${i}`).textContent = q.options[i];
+      }
+    }
+
+    function showResults() {
+      document.getElementById("result-screen").classList.remove("hidden");
+      document.getElementById("final-score").textContent = `${score} / 100`;
+    }
+
+    function restartQuiz() {
+      currentQuestionIndex = 0;
+      score = 0;
+      document.getElementById("score-val").textContent = "0";
+      document.getElementById("result-screen").classList.add("hidden");
+      loadQuestion();
+    }
+
+    function updateStatus(text) {
+      document.getElementById("status-text").textContent = text;
+    }
+
+    // Calibration Trigger
+    document.getElementById("calib-btn").addEventListener("click", () => {
+      calibOffsetX = (window.innerWidth / 2) - aimX;
+      calibOffsetY = (window.innerHeight / 2) - aimY;
+      updateStatus("Penentukuran Berjaya! Sasaran Dilaraskan ke Pusat Skrin.");
+    });
+  </script>
+</body>
+</html>
